@@ -1,7 +1,26 @@
 #pragma once
 
 #include <string>
-#include "enums/token_type.hpp"
+
+enum class TokenType : unsigned char {
+    RightCurlyBraces,
+    LeftCurlyBraces,
+
+    RightParenthesis,
+    LeftParenthesis,
+
+    BooleanLiteral,
+    NumberLiteral,
+
+    Identifier,
+    EndOfFile,
+
+    Operator,
+    Keyword,
+    String,
+    
+    Comma
+};
 
 class Token {
     public:

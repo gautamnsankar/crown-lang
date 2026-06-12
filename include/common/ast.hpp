@@ -49,8 +49,9 @@ class ReturnStatement : public Statement {
 
 class NumberLiteral : public Expression {
     public:
+        NumberType number_type;
         std::string value;
-        NumberLiteral(std::string value) : value(std::move(value)) {}
+        NumberLiteral(std::string value, NumberType type) : value(std::move(value)), number_type(type) {}
 };
 
 class BooleanLiteral : public Expression {
@@ -69,4 +70,46 @@ class BinaryExpression : public Expression {
         left(std::move(left)), 
         op(std::move(op)), 
         right(std::move(right)) {}
+};
+
+class VariableDeclaration : public Statement {
+    public:
+        std::unique_ptr<Expression> value;
+        std::string name;
+        Type type;
+
+        VariableDeclaration(std::string name, std::unique_ptr<Expression> value, Type type) :
+            name(std::move(name)),
+            value(std::move(value)),
+            type(type) {}
+};
+
+class VariableReference : public Expression {
+    public:
+        std::string name;
+        VariableReference(std::string name) : name(std::move(name)) {}
+};
+
+class FunctionParameter {
+    public:
+        std::string name;
+        Type type;
+
+        FunctionParameter(std::string name, Type type) :
+            name(std::move(name)),
+            type(std::move(type)) {}
+};
+
+class FunctionDeclaration : public Declaration {
+    public:
+        std::unique_ptr<BlockStatement> body;
+        std::vector<FunctionParameter> args;
+        std::string name;
+        Type return_type;
+
+        FunctionDeclaration(std::string name, std::vector<FunctionParameter> args, Type return_type, std::unique_ptr<BlockStatement> body) :
+            name(std::move(name)),
+            args(std::move(args)),
+            return_type(std::move(return_type)),
+            body(std::move(body)) {}
 };

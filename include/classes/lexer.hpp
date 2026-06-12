@@ -103,19 +103,42 @@ class Lexer {
             return Token(TokenType::String, buffer);
         }
 
-        Token lex_operator() {
+        bool is_operator_prefix(const std::string &text){
+            return std::any_of(
+                OPERATORS.begin(),
+                OPERATORS.end(),
+                [&](const std::string_view& op) {
+                    return op.starts_with(text);
+                }
+            );
+        }
+
+        Token lex_operator()
+        {
+            std::string best_match;
             std::string buffer;
 
-            while (is_operator(current())) {
-                unsigned char c = advance();
-                buffer += c;
+            while (!is_end()) {
+                std::string next = buffer;
+                next += current();
+
+                if (!is_operator_prefix(next)) {
+                    break;
+                }
+
+                advance();
+                buffer = next;
 
                 if (std::find(OPERATORS.begin(), OPERATORS.end(), buffer) != OPERATORS.end()) {
-                    return Token(TokenType::Operator, buffer);
+                    best_match = buffer;
                 }
             }
 
-            throw std::runtime_error("Error while lexing operator.");
+            if (best_match.empty()) {
+                throw std::runtime_error("Error while lexing operator.");
+            }
+
+            return Token(TokenType::Operator, best_match);
         }
 
         Token lex_digits() {
@@ -180,14 +203,33 @@ class Lexer {
                     continue;
                 }
 
+                if (c == '{') {
+                    tokens.push_back(Token(TokenType::LeftCurlyBraces, "{"));
+                    advance();
+                    continue;
+                }
+
+                 if (c == '}') {
+                    tokens.push_back(Token(TokenType::RightCurlyBraces, "}"));
+                    advance();
+                    continue;
+                }
+
                 if (c == '"' || c == '\'' || c == '`') {
                     tokens.push_back(lex_string(c));
                     continue;
                 }
 
+                if (c == ',') {
+                    tokens.push_back(Token(TokenType::Comma, ","));
+                    advance();
+                    continue;
+                }
 
                 advance(); // TODO: error handle properly
             }
+
+            tokens.push_back(Token(TokenType::EndOfFile, "EOF"));
 
             return tokens;
         }
