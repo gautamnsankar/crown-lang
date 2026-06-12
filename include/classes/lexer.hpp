@@ -165,6 +165,15 @@ class Lexer {
     public:
         Lexer(std::string source) : raw_source(std::move(source)), cursor(0) {}
 
+        static void visualize_tokens(const std::vector<Token>& tokens) {
+            for (const Token& t : tokens) {
+                std::cout << "Type: " << (int) t.type << '\n';
+                std::cout << "Value: " << t.value << '\n';
+
+                std::cout << '\n';
+            }
+        }
+
         std::vector<Token> lex() {
             std::vector<Token> tokens;
 
@@ -226,7 +235,13 @@ class Lexer {
                     continue;
                 }
 
-                advance(); // TODO: error handle properly
+                if (c == ';') {
+                    tokens.push_back(Token(TokenType::Semicolon, ";"));
+                    advance();
+                    continue;
+                }
+
+                    advance(); // TODO: error handle properly
             }
 
             tokens.push_back(Token(TokenType::EndOfFile, "EOF"));

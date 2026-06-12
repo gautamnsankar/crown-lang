@@ -8,7 +8,7 @@ enum class TokenType : unsigned char {
 
     RightParenthesis,
     LeftParenthesis,
-
+    
     BooleanLiteral,
     NumberLiteral,
 
@@ -19,6 +19,7 @@ enum class TokenType : unsigned char {
     Keyword,
     String,
     
+    Semicolon,
     Comma
 };
 

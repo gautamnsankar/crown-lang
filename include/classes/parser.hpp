@@ -75,14 +75,138 @@ class Parser {
             return advance();
         }
 
+        static void indent(int n) {
+            for (int i = 0; i < n; ++i) {
+                std::cout << "  ";
+            }
+        }
+
+        static void visualize_expression(const Expression& expression, int depth = 0) {
+            if (const auto* number = dynamic_cast<const NumberLiteral*>(&expression)) {
+                indent(depth - 1);
+                std::cout << "Value: NumberLiteral(" << number->value << ")" << '\n';
+                return;
+            }
+
+            if (const auto* boolean = dynamic_cast<const BooleanLiteral*>(&expression)) {
+                indent(depth - 1);
+                std::cout << "Value: BooleanLiteral(" << boolean->value << ")" << '\n';
+                return;
+            }
+
+            if (const auto* string = dynamic_cast<const StringLiteral*>(&expression)) {
+                indent(depth - 1);
+                std::cout << "Value: StringLiteral(" << string->value << ")" << '\n';
+                return;
+            }
+
+            if (const auto* variable = dynamic_cast<const VariableReference*>(&expression)) {
+                indent(depth);
+                std::cout << "VariableReference: " << variable->name << '\n';
+
+                return;
+            }
+
+            if (const auto* binary = dynamic_cast<const BinaryExpression*>(&expression)) {
+                indent(depth);
+                std::cout << "BinaryExpression: " << '\n';
+                indent(depth + 1);
+                std::cout << "Left:\n";
+                visualize_expression(*binary->left, depth + 2);
+
+                indent(depth + 1);
+                std::cout << "Operator: " << binary->op.value << '\n';
+
+                indent(depth + 1);
+                std::cout << "Right:\n";
+                visualize_expression(*binary->right, depth + 2);
+                return;
+            }
+        }
+
+        static void visualize_block(const BlockStatement& block, int depth = 0) {
+            for (auto& statement : block.statements) {
+                visualize_statement(*statement, depth + 1);
+            }
+        }
+
+        static void visualize_statement(const Statement& statement, int depth = 0) {
+            if (const auto* variable = dynamic_cast<const VariableDeclaration*>(&statement)) {
+                indent(depth);
+                std::cout << "VariableDeclaration:" << '\n';
+                indent(depth + 1);
+                std::cout << "Name: " << variable->name << '\n';
+                visualize_expression(*variable->value, depth + 2);
+
+                return;
+            }
+
+            if (const auto* ret = dynamic_cast<const ReturnStatement*>(&statement)) {
+                indent(depth);
+                std::cout << "ReturnStatement: ";
+                
+                if (ret->value == nullptr) {
+                    std::cout << "void";
+                } else {
+                    std::cout << '\n';
+                    visualize_expression(*ret->value, depth + 2);
+                }
+
+                return;
+            }
+        }
+
+        static void visualize_declarations(const Declaration& declaration, int depth = 2) {
+            if (const auto* function = dynamic_cast<const FunctionDeclaration*>(&declaration)) {
+                indent(depth);
+                std::cout << "FunctionDeclaration:" << '\n';
+                indent(depth + 1);
+                std::cout << "Name: " << function->name << '\n';
+                indent(depth + 1);
+                std::cout << "Parameters: ";
+
+                if (function->parameters.size() == 0) {
+                    std::cout << "None" << '\n';
+                } else {
+                    indent(depth + 2);
+                }
+
+                for (auto& param : function->parameters) {
+                    indent(depth + 3);
+                    std::cout << param.name << " (" << param.type.to_string() << ")" << '\n';
+                }
+
+                indent(depth + 1);
+                std::cout << "ReturnType: " << function->return_type.to_string() << '\n';
+
+                indent(depth + 1);
+                std::cout << "Body: " << '\n';
+                visualize_block(*function->body, depth + 1);
+
+                return;
+            }
+        }
+
     public:
         Parser(std::vector<Token> tokens) : tokens(std::move(tokens)), cursor(0) {}
+
+        static void visualize_ast(const Program& program) {
+            std::cout << "Program:" << '\n';
+
+            for (auto& declaration : program.declarations) {
+                visualize_declarations(*declaration);
+            }
+        }
 
         Type parse_type() {
             const Token& token = expect(TokenType::Identifier);
 
             if (token.value == "void") {
                 return Type(TypeKind::Void);
+            }
+
+            if (token.value == "string") {
+                return Type(TypeKind::String);
             }
 
             if (token.value == "int") {
@@ -144,6 +268,11 @@ class Parser {
                 return std::make_unique<BooleanLiteral>(token.value == "true" ? true : false);
             }
 
+            if (token.type == TokenType::String) {
+                const Token& token = advance();
+                return std::make_unique<StringLiteral>(token.value);
+            }
+
             if (token.type == TokenType::LeftParenthesis) {
                 advance();
                 auto expression = parse_expression();
@@ -175,7 +304,7 @@ class Parser {
 
                 left = std::make_unique<BinaryExpression>(
                     std::move(left),
-                    token,
+                    op_token,
                     std::move(right)
                 );
             }
@@ -196,10 +325,13 @@ class Parser {
             }
 
             expect(TokenType::Operator, "=");
+            auto value = parse_expression();
+
+            expect(TokenType::Semicolon);
 
             return std::make_unique<VariableDeclaration>(
                 variable_name.value,
-                parse_expression(),
+                std::move(value),
                 type
             );
         }
@@ -207,7 +339,14 @@ class Parser {
         std::unique_ptr<ReturnStatement> parse_return_statement() {
             expect(TokenType::Keyword, "return");
 
+            if (current().type == TokenType::Semicolon) {
+                expect(TokenType::Semicolon);
+                return std::make_unique<ReturnStatement>(nullptr);
+            }
+
             auto value = parse_expression();
+            expect(TokenType::Semicolon);
+
             return std::make_unique<ReturnStatement>(std::move(value));
         }
 

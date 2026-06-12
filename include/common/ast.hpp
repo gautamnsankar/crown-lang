@@ -60,6 +60,12 @@ class BooleanLiteral : public Expression {
         BooleanLiteral(bool value) : value(value) {}
 };
 
+class StringLiteral : public Expression {
+    public:
+        std::string value;
+        StringLiteral(std::string value) : value(value) {}
+};
+
 class BinaryExpression : public Expression {
     public:
         std::unique_ptr<Expression> right;
@@ -67,9 +73,9 @@ class BinaryExpression : public Expression {
         Token op;
 
         BinaryExpression(std::unique_ptr<Expression> left, Token op, std::unique_ptr<Expression> right) : 
-        left(std::move(left)), 
-        op(std::move(op)), 
-        right(std::move(right)) {}
+            left(std::move(left)),                                                                                           
+            op(std::move(op)),                                                                                              
+            right(std::move(right)) {}
 };
 
 class VariableDeclaration : public Statement {
@@ -102,14 +108,14 @@ class FunctionParameter {
 
 class FunctionDeclaration : public Declaration {
     public:
+        std::vector<FunctionParameter> parameters;
         std::unique_ptr<BlockStatement> body;
-        std::vector<FunctionParameter> args;
         std::string name;
         Type return_type;
 
-        FunctionDeclaration(std::string name, std::vector<FunctionParameter> args, Type return_type, std::unique_ptr<BlockStatement> body) :
+        FunctionDeclaration(std::string name, std::vector<FunctionParameter> params, Type return_type, std::unique_ptr<BlockStatement> body) :
             name(std::move(name)),
-            args(std::move(args)),
+            parameters(std::move(params)),
             return_type(std::move(return_type)),
             body(std::move(body)) {}
 };
