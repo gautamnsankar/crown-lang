@@ -1,2 +1,2 @@
-g++ -I include index.cpp -o main
+g++ -I include src/index.cpp -o main
 ./main
