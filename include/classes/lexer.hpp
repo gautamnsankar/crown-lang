@@ -32,7 +32,10 @@ class Lexer {
         bool is_operator(unsigned char c) {
             char ch = static_cast<char>(c);
             std::string_view view {&ch, 1};
-            return std::find(OPERATORS.begin(), OPERATORS.end(), view) != OPERATORS.end();
+
+            return std::any_of(OPERATORS.begin(), OPERATORS.end(), [&](std::string_view op) {
+                return op.starts_with(view);
+            });
         }
 
         bool is_boolean(std::string_view buffer) {
@@ -103,7 +106,7 @@ class Lexer {
             return Token(TokenType::String, buffer);
         }
 
-        bool is_operator_prefix(const std::string &text){
+        bool is_operator_prefix(const std::string& text){
             return std::any_of(
                 OPERATORS.begin(),
                 OPERATORS.end(),
@@ -113,8 +116,7 @@ class Lexer {
             );
         }
 
-        Token lex_operator()
-        {
+        Token lex_operator() {
             std::string best_match;
             std::string buffer;
 
@@ -164,15 +166,6 @@ class Lexer {
         
     public:
         Lexer(std::string source) : raw_source(std::move(source)), cursor(0) {}
-
-        static void visualize_tokens(const std::vector<Token>& tokens) {
-            for (const Token& t : tokens) {
-                std::cout << "Type: " << (int) t.type << '\n';
-                std::cout << "Value: " << t.value << '\n';
-
-                std::cout << '\n';
-            }
-        }
 
         std::vector<Token> lex() {
             std::vector<Token> tokens;

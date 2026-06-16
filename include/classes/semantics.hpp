@@ -90,6 +90,54 @@ class SemanticAnalyzer {
                 return;
             }
 
+            if (const auto* variable = dynamic_cast<const AssignmentStatement*>(&statement)) {
+                auto iterator = variables.find(variable->name);
+
+                if (iterator == variables.end()) {
+                    return;
+                }
+
+                auto value_type = analyze_expression(*variable->value);
+                auto original_type = iterator->second.type;
+
+                if (value_type.kind != original_type.kind) {
+                    throw std::runtime_error(
+                        "Original variable is of type " + original_type.to_string() +
+                        ". Reassignment is of type " + value_type.to_string()
+                    );
+                }
+
+                return;
+            }
+
+            if (const auto* loop = dynamic_cast<const WhileStatement*>(&statement)) {
+                auto condition_type = analyze_expression(*loop->condition);
+
+                if (condition_type.kind != TypeKind::Boolean) {
+                    throw std::runtime_error("While loop condition must be a boolean");
+                }
+
+                return;
+            }
+
+            if (const auto* if_statement = dynamic_cast<const IfStatement*>(&statement)) {
+                auto condition_type = analyze_expression(*if_statement->condition);
+
+                if (condition_type.kind != TypeKind::Boolean) {
+                    throw std::runtime_error("if statement condition must be a boolean");
+                }
+
+                return;
+            }
+
+            if (const auto* break_statement = dynamic_cast<const BreakStatement*>(&statement)) {
+                return;
+            }
+
+            if (const auto* break_statement = dynamic_cast<const ContinueStatement*>(&statement)) {
+                return;
+            }
+
             throw std::runtime_error("Unknown statement.");
         }
 
@@ -123,7 +171,7 @@ class SemanticAnalyzer {
                     throw std::runtime_error("Unknown function: " + call->callee);
                 }
 
-                const FunctionSymbol &fs = iterator->second;
+                const FunctionSymbol& fs = iterator->second;
 
                 if (call->arguments.size() != fs.parameter_types.size()) {
                     throw std::runtime_error(
@@ -153,18 +201,82 @@ class SemanticAnalyzer {
                 Type left_type = analyze_expression(*binary->left);
                 Type right_type = analyze_expression(*binary->right);
 
-                bool is_valid = (left_type.kind == TypeKind::Int || left_type.kind == TypeKind::Double) &&
+                bool is_numeric = (left_type.kind == TypeKind::Int || left_type.kind == TypeKind::Double) &&
                                 (right_type.kind == TypeKind::Int || left_type.kind == TypeKind::Double);
 
-                if (!is_valid) {
-                    throw std::runtime_error("Cannot perform arithmetic on types " + left_type.to_string() + " and " + right_type.to_string());
+                bool is_comparison = binary->op.value == "==" ||
+                                     binary->op.value == "!=" ||
+                                     binary->op.value == ">=" ||
+                                     binary->op.value == "<=" ||
+                                     binary->op.value == ">" ||
+                                     binary->op.value == "<";
+
+                bool is_logical = binary->op.value == "&&" || binary->op.value == "||";
+
+                if (is_logical) {
+                    if (left_type.kind != TypeKind::Boolean || right_type.kind != TypeKind::Boolean) {
+                        throw std::runtime_error("Logical operators can only be performed on two booleans.");
+                    }
+
+                    return Type(TypeKind::Boolean);
                 }
 
-                if (left_type.kind == TypeKind::Double || right_type.kind == TypeKind::Double) {
-                    return Type(TypeKind::Double);
+                if (is_comparison) {
+                    if (!is_numeric) {
+                        throw std::runtime_error(
+                            "Cannot compare types " +
+                            left_type.to_string() +
+                            " and " +
+                            right_type.to_string()
+                        );
+                    }
+
+                    return Type(TypeKind::Boolean);
                 }
 
-                return Type(left_type.kind);
+                bool is_arithmetic = binary->op.value == "+" ||
+                                     binary->op.value == "-" ||
+                                     binary->op.value == "*" ||
+                                     binary->op.value == "/";
+                if (is_arithmetic) {
+                    if (!is_numeric) {
+                        throw std::runtime_error(
+                            "Cannot perform arithmetic on types " +
+                            left_type.to_string() +
+                            " and " +
+                            right_type.to_string()
+                        );
+                    }
+
+                    if (left_type.kind == TypeKind::Double || right_type.kind == TypeKind::Double) {
+                        return Type(TypeKind::Double);
+                    }
+                }
+
+                return Type(TypeKind::Int);
+            }
+
+            if (const auto* unary = dynamic_cast<const UnaryExpression*>(&expression)) {
+                auto right_type = analyze_expression(*unary->right);
+
+
+                if (unary->op.value == "!") {
+                    if (right_type.kind != TypeKind::Boolean) {
+                        throw std::runtime_error("Cannot perform \"not\" on non boolean types.");
+                    }
+
+                    return Type(TypeKind::Boolean);
+                }
+
+                if (unary->op.value == "-") {
+                    if (right_type.kind != TypeKind::Int && right_type.kind != TypeKind::Double) {
+                        throw std::runtime_error("Cannot negate non numbers.");
+                    }
+
+                    return right_type;
+                }
+
+                throw std::runtime_error("Unknown unary operation.");
             }
 
             throw std::runtime_error("Unknown expression.");

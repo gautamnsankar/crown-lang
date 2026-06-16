@@ -7,16 +7,9 @@
 
 int main() {
     std::string code = R"(
-    fn test(a: int, b: int) -> void {
-        return;
-    }
-    
-    fn main() -> int {
-        while (true) {
-            test(1, 2);
-        }
-        
-        return 0;
+    fn main() -> boolean {
+        let x = 3;
+        return x < 0 || x == 3;
     }
     )";
     Lexer lexer(code);
@@ -24,12 +17,9 @@ int main() {
 
     Parser parser(tokens);
     auto ast = parser.parse();
-    
-    // Lexer::visualize_tokens(tokens);
-    Parser::visualize_ast(ast);
 
-    // SemanticAnalyzer analyzer;
-    // analyzer.analyze(ast);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(ast);
 
     LLVMCodeGenerator generator;
     generator.generate(ast);

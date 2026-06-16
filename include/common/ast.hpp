@@ -145,3 +145,44 @@ class WhileStatement : public Statement {
             condition(std::move(condition)),
             body(std::move(body)) {}
 };
+
+class AssignmentStatement : public Statement {
+    public:
+        std::string name;
+        std::unique_ptr<Expression> value;
+
+        AssignmentStatement(std::string name, std::unique_ptr<Expression> value) :
+            name(std::move(name)), value(std::move(value)) {}
+};
+
+class IfStatement : public Statement {
+    public:
+        std::unique_ptr<Expression> condition;
+        std::unique_ptr<BlockStatement> then_body;
+        std::unique_ptr<Statement> else_branch;
+
+        IfStatement(std::unique_ptr<Expression> condition, std::unique_ptr<BlockStatement> then, std::unique_ptr<Statement> else_block) :
+            condition(std::move(condition)),
+            then_body(std::move(then)),
+            else_branch(std::move(else_block)) {}
+};
+
+class BreakStatement : public Statement {
+    public:
+        BreakStatement() = default;
+};
+
+class ContinueStatement : public Statement {
+    public:
+        ContinueStatement() = default;
+};
+
+class UnaryExpression : public Expression {
+    public:
+        std::unique_ptr<Expression> right;
+        Token op;
+
+        UnaryExpression(Token op, std::unique_ptr<Expression> right) :
+            op(std::move(op)),
+            right(std::move(right)) {}
+};

@@ -19,6 +19,9 @@ class LLVMCodeGenerator {
         std::unordered_map<std::string, llvm::AllocaInst*> variables;
         std::unordered_map<std::string, llvm::AllocaInst*> functions;
 
+        std::vector<llvm::BasicBlock*> continue_targets;
+        std::vector<llvm::BasicBlock*> break_targets;
+
     public:
         llvm::Type* generate_type(const Type& type) {
             if (type.kind == TypeKind::Int) {
@@ -61,7 +64,7 @@ class LLVMCodeGenerator {
                 parameter_types.push_back(generate_type(paramater.type));
             }
 
-            llvm::Type *return_type = generate_type(function.return_type);
+            llvm::Type* return_type = generate_type(function.return_type);
             llvm::FunctionType* function_type = llvm::FunctionType::get(return_type, parameter_types, false);
 
             llvm::Function* created_function = llvm::Function::Create(
@@ -71,17 +74,17 @@ class LLVMCodeGenerator {
                 module.get()
             );
 
-            llvm::BasicBlock *entry_block = llvm::BasicBlock::Create(*context, "entry", created_function);
+            llvm::BasicBlock* entry_block = llvm::BasicBlock::Create(*context, "entry", created_function);
             builder->SetInsertPoint(entry_block);
 
             variables.clear();
 
             std::size_t index = 0;
             for (auto& llvm_arg : created_function->args()) {
-                const auto &parameter = function.parameters[index];
+                const auto& parameter = function.parameters[index];
                 llvm_arg.setName(parameter.name);
 
-                llvm::AllocaInst *allocation = builder->CreateAlloca(llvm_arg.getType(), nullptr, parameter.name);
+                llvm::AllocaInst* allocation = builder->CreateAlloca(llvm_arg.getType(), nullptr, parameter.name);
                 builder->CreateStore(&llvm_arg, allocation);
 
                 variables[parameter.name] = allocation;
@@ -106,6 +109,11 @@ class LLVMCodeGenerator {
         }
 
         void generate_statement(const Statement& statement) {
+            if (const auto* block = dynamic_cast<const BlockStatement*>(&statement)) {
+                generate_block(*block);
+                return;
+            }
+            
             if (const auto* ret = dynamic_cast<const ReturnStatement*>(&statement)) {
                 if (!ret->value) {
                     builder->CreateRetVoid();
@@ -119,8 +127,8 @@ class LLVMCodeGenerator {
             }
 
             if (const auto* variable = dynamic_cast<const VariableDeclaration*>(&statement)) {
-                llvm::Value *initializer = generate_expression(*variable->value);
-                llvm::AllocaInst *allocation = builder->CreateAlloca(initializer->getType(), nullptr, variable->name);
+                llvm::Value* initializer = generate_expression(*variable->value);
+                llvm::AllocaInst* allocation = builder->CreateAlloca(initializer->getType(), nullptr, variable->name);
 
                 builder->CreateStore(initializer, allocation);
                 variables[variable->name] = allocation;
@@ -136,24 +144,102 @@ class LLVMCodeGenerator {
             if (const auto* loop = dynamic_cast<const WhileStatement*>(&statement)) {
                 llvm::Function* current_function = builder->GetInsertBlock()->getParent();
                 llvm::BasicBlock* condition_block = llvm::BasicBlock::Create(*context, "while.condition", current_function);
-                llvm::BasicBlock *body_block = llvm::BasicBlock::Create(*context, "while.body", current_function);
-                llvm::BasicBlock *after_block = llvm::BasicBlock::Create(*context, "while.after", current_function);
+                llvm::BasicBlock* body_block = llvm::BasicBlock::Create(*context, "while.body", current_function);
+                llvm::BasicBlock* after_block = llvm::BasicBlock::Create(*context, "while.after", current_function);
 
                 builder->CreateBr(condition_block);
                 builder->SetInsertPoint(condition_block);
 
-                llvm::Value *condition_value = generate_expression(*loop->condition);
+                llvm::Value* condition_value = generate_expression(*loop->condition);
 
                 builder->CreateCondBr(condition_value, body_block, after_block);
                 builder->SetInsertPoint(body_block);
 
+                continue_targets.push_back(condition_block);
+                break_targets.push_back(after_block);
+
                 generate_block(*loop->body);
+
+                continue_targets.pop_back();
+                break_targets.pop_back();
 
                 if (!builder->GetInsertBlock()->getTerminator()) {
                     builder->CreateBr(condition_block);
                 }
 
                 builder->SetInsertPoint(after_block);
+                return;
+            }
+
+            if (const auto* variable = dynamic_cast<const AssignmentStatement*>(&statement)) {
+                auto iterator = variables.find(variable->name);
+
+                if (iterator == variables.end()) {
+                    throw std::runtime_error("Cannot reassign uninitialized variables.");
+                }
+
+                llvm::Value* value = generate_expression(*variable->value);
+                llvm::AllocaInst* allocation = iterator->second;
+
+                builder->CreateStore(value, allocation);
+
+                return;
+            }
+
+            if (const auto* if_statement = dynamic_cast<const IfStatement*>(&statement)) {
+                llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+                llvm::BasicBlock* then_block = llvm::BasicBlock::Create(*context, "if.then", current_function);
+                llvm::BasicBlock* else_block = llvm::BasicBlock::Create(*context, "if.else", current_function);
+                llvm::BasicBlock* after_block = llvm::BasicBlock::Create(*context, "if.after", current_function);
+
+                llvm::Value* condition_value = generate_expression(*if_statement->condition);
+                builder->CreateCondBr(condition_value, then_block, else_block);
+
+                builder->SetInsertPoint(then_block);
+                generate_block(*if_statement->then_body);
+
+                bool then_terminator = builder->GetInsertBlock()->getTerminator() != nullptr;
+
+                if (!then_terminator) {
+                    builder->CreateBr(after_block);
+                }
+
+                builder->SetInsertPoint(else_block);
+
+                if (if_statement->else_branch) {
+                    generate_statement(*if_statement->else_branch);
+                }
+
+                bool else_terminator = builder->GetInsertBlock()->getTerminator() != nullptr;
+
+                if (!else_terminator) {
+                    builder->CreateBr(after_block);
+                }
+
+                if (then_terminator && else_terminator) {
+                    after_block->eraseFromParent();
+                } else {
+                    builder->SetInsertPoint(after_block);
+                }
+
+                return;
+            }
+
+            if (const auto* break_statement = dynamic_cast<const BreakStatement*>(&statement)) {
+                if (break_targets.empty()) {
+                    throw std::runtime_error("Cannot use break outside of loops.");
+                }
+
+                builder->CreateBr(break_targets.back());
+                return;
+            }
+
+            if (const auto* continue_statement = dynamic_cast<const ContinueStatement*>(&statement)) {
+                if (continue_targets.empty()) {
+                    throw std::runtime_error("Cannot use continue outside of loops.");
+                }
+
+                builder->CreateBr(continue_targets.back());
                 return;
             }
 
@@ -182,12 +268,12 @@ class LLVMCodeGenerator {
                     throw std::runtime_error("Variable not defined (LLVM)");
                 }
 
-                llvm::AllocaInst *allocation = iterator->second;
+                llvm::AllocaInst* allocation = iterator->second;
                 return builder->CreateLoad(allocation->getAllocatedType(), allocation, variable->name);
             }
 
             if (const auto* call = dynamic_cast<const FunctionCall*>(&expression)) {
-                llvm::Function *function = module->getFunction(call->callee);
+                llvm::Function* function = module->getFunction(call->callee);
 
                 if (!function) {
                     throw std::runtime_error("Unknown function (LLVM)");
@@ -215,25 +301,85 @@ class LLVMCodeGenerator {
                     if (is_double) {
                         return builder->CreateFAdd(left_expression, right_expression);
                     }
+
                     return builder->CreateAdd(left_expression, right_expression);
                 } else if (binary->op.value == "-") {
                     if (is_double) {
                         return builder->CreateFSub(left_expression, right_expression);
                     }
+
                     return builder->CreateSub(left_expression, right_expression);
                 } else if (binary->op.value == "*") {
                     if (is_double) {
                         return builder->CreateFMul(left_expression, right_expression);
                     }
+
                     return builder->CreateMul(left_expression, right_expression);
                 } else if (binary->op.value == "/") {
                     if (is_double) {
                         return builder->CreateFDiv(left_expression, right_expression);
                     }
+
                     return builder->CreateSDiv(left_expression, right_expression);
                 }
 
+                if (binary->op.value == ">") {
+                    if (is_double) {
+                        return builder->CreateFCmpOGT(left_expression, right_expression);
+                    }
+
+                    return builder->CreateICmpSGT(left_expression, right_expression);
+                } else if (binary->op.value == ">=") {
+                    if (is_double) {
+                        return builder->CreateFCmpOGE(left_expression, right_expression);
+                    }
+
+                    return builder->CreateICmpSGE(left_expression, right_expression);
+                } else if (binary->op.value == "<") {
+                    if (is_double) {
+                        return builder->CreateFCmpOLT(left_expression, right_expression);
+                    }
+
+                    return builder->CreateICmpSLT(left_expression, right_expression);
+                } else if (binary->op.value == "<=") {
+                    if (is_double) {
+                        return builder->CreateFCmpOLE(left_expression, right_expression);
+                    }
+
+                    return builder->CreateICmpSLE(left_expression, right_expression);
+                } else if (binary->op.value == "==") {
+                    if (is_double) {
+                        return builder->CreateFCmpOEQ(left_expression, right_expression);
+                    }
+
+                    return builder->CreateICmpEQ(left_expression, right_expression);
+                }
+
+                if (binary->op.value == "&&") {
+                    return builder->CreateAnd(left_expression, right_expression);
+                } else if (binary->op.value == "||") {
+                    return builder->CreateOr(left_expression, right_expression);
+                }
+
                 throw std::runtime_error("Unknown binary operation (LLVM)");
+            }
+
+            if (const auto* unary = dynamic_cast<const UnaryExpression*>(&expression)) {
+                llvm::Value* value = generate_expression(*unary->right);
+
+                if (unary->op.value == "!") {
+                    return builder->CreateICmpEQ(value, llvm::ConstantInt::getFalse(*context));
+                }
+
+                if (unary->op.value == "-") {
+                    if (value->getType()->isDoubleTy()) {
+                        return builder->CreateFNeg(value);
+                    }
+
+                    return builder->CreateNeg(value);
+                }
+
+                throw std::runtime_error("Unknown unary operation");
             }
 
             throw std::runtime_error("Unknown expression (LLVM)");

@@ -75,171 +75,8 @@ class Parser {
             return advance();
         }
 
-        static void indent(int n) {
-            for (int i = 0; i < n; ++i) {
-                std::cout << "  ";
-            }
-        }
-
-        static void visualize_expression(const Expression& expression, int depth = 0) {
-            if (const auto* number = dynamic_cast<const NumberLiteral*>(&expression)) {
-                indent(depth);
-                std::cout << "Value: NumberLiteral(" << number->value << ")" << '\n';
-                return;
-            }
-
-            if (const auto* boolean = dynamic_cast<const BooleanLiteral*>(&expression)) {
-                indent(depth);
-                std::cout << "Value: BooleanLiteral(" << boolean->value << ")" << '\n';
-                return;
-            }
-
-            if (const auto* string = dynamic_cast<const StringLiteral*>(&expression)) {
-                indent(depth);
-                std::cout << "Value: StringLiteral(" << string->value << ")" << '\n';
-                return;
-            }
-
-            if (const auto* variable = dynamic_cast<const VariableReference*>(&expression)) {
-                indent(depth);
-                std::cout << "VariableReference: " << variable->name << '\n';
-
-                return;
-            }
-
-            if (const auto* binary = dynamic_cast<const BinaryExpression*>(&expression)) {
-                indent(depth);
-                std::cout << "BinaryExpression: " << '\n';
-                indent(depth + 1);
-                std::cout << "Left:\n";
-                visualize_expression(*binary->left, depth + 2);
-
-                indent(depth + 1);
-                std::cout << "Operator: " << binary->op.value << '\n';
-
-                indent(depth + 1);
-                std::cout << "Right:\n";
-                visualize_expression(*binary->right, depth + 2);
-                return;
-            }
-
-            if (const auto* call = dynamic_cast<const FunctionCall*>(&expression)) {
-                indent(depth);
-                std::cout << "FunctionCall: " << call->callee << '\n';
-
-                indent(depth + 1);
-                std::cout << "Arguments: ";
-
-                if (!call->arguments.empty()) {
-                    std::cout << '\n';
-                    for (const auto& arg : call->arguments) {
-                        visualize_expression(*arg, depth + 2);
-                    }
-                } else {
-                    std::cout << "None\n";
-                }
-
-                return;
-            }
-        }
-
-        static void visualize_block(const BlockStatement& block, int depth = 0) {
-            for (auto& statement : block.statements) {
-                visualize_statement(*statement, depth + 1);
-            }
-        }
-
-        static void visualize_statement(const Statement& statement, int depth = 0) {
-            if (const auto* variable = dynamic_cast<const VariableDeclaration*>(&statement)) {
-                indent(depth);
-                std::cout << "VariableDeclaration:" << '\n';
-                indent(depth + 1);
-                std::cout << "Name: " << variable->name << '\n';
-                indent(depth + 1);
-                std::cout << "Type: " << variable->type.to_string() << '\n';
-                visualize_expression(*variable->value, depth + 2);
-
-                return;
-            }
-
-            if (const auto* ret = dynamic_cast<const ReturnStatement*>(&statement)) {
-                indent(depth);
-                std::cout << "ReturnStatement: ";
-                
-                if (ret->value == nullptr) {
-                    std::cout << "void";
-                } else {
-                    visualize_expression(*ret->value, depth + 2);
-                }
-
-                std::cout << '\n';
-
-                return;
-            }
-
-            if (const auto* loop = dynamic_cast<const WhileStatement*>(&statement)) {
-                indent(depth);
-                std::cout << "WhileStatement: \n";
-
-                indent(depth + 1);
-                std::cout << "Condition:";
-                visualize_expression(*loop->condition, depth + 2);
-
-                indent(depth + 1);
-                std::cout << "Body:\n";
-                visualize_block(*loop->body, depth + 1);
-                return;
-            }
-
-
-            if (const auto* expression = dynamic_cast<const ExpressionStatement*>(&statement)) {
-                indent(depth);
-                std::cout << "ExpressionStatement:\n";
-                visualize_expression(*expression->expression, depth + 1);
-                return;
-            }
-        }
-
-        static void visualize_declarations(const Declaration& declaration, int depth = 2) {
-            if (const auto* function = dynamic_cast<const FunctionDeclaration*>(&declaration)) {
-                indent(depth);
-                std::cout << "FunctionDeclaration:" << '\n';
-                indent(depth + 1);
-                std::cout << "Name: " << function->name << '\n';
-                indent(depth + 1);
-                std::cout << "Parameters: ";
-
-                if (function->parameters.size() == 0) {
-                    std::cout << "None";
-                }
-
-                for (auto& param : function->parameters) {
-                    std::cout << param.name << " (" << param.type.to_string() << ")" << "  ";
-                }
-
-                std::cout << '\n';
-
-                indent(depth + 1);
-                std::cout << "ReturnType: " << function->return_type.to_string() << '\n';
-
-                indent(depth + 1);
-                std::cout << "Body: " << '\n';
-                visualize_block(*function->body, depth + 1);
-
-                return;
-            }
-        }
-
     public:
         Parser(std::vector<Token> tokens) : tokens(std::move(tokens)), cursor(0) {}
-
-        static void visualize_ast(const Program& program) {
-            std::cout << "Program:" << '\n';
-
-            for (auto& declaration : program.declarations) {
-                visualize_declarations(*declaration);
-            }
-        }
 
         Type parse_type() {
             const Token& token = expect(TokenType::Identifier);
@@ -283,21 +120,40 @@ class Parser {
                 return -1;
             }
 
-            if (token.value == "==" || token.value == "!=" || 
-                token.value == "<" || token.value == "<=" ||
-                token.value == ">" || token.value == ">=") {
+            if (token.value == "||") {
                 return 1;
             }
 
-            if (token.value == "+" || token.value == "-") {
+            if (token.value == "&&") {
                 return 2;
             }
 
-            if (token.value == "*" || token.value == "/") {
+            if (token.value == "==" || token.value == "!=" || 
+                token.value == "<" || token.value == "<=" ||
+                token.value == ">" || token.value == ">=") {
                 return 3;
             }
 
+            if (token.value == "+" || token.value == "-") {
+                return 4;
+            }
+
+            if (token.value == "*" || token.value == "/") {
+                return 5;
+            }
+
             return -1;
+        }
+
+        std::unique_ptr<Expression> parse_unary_expression() {
+            if (current().type == TokenType::Operator && current().value == "!" || current().value == "-") {
+                Token op = advance();
+                auto right = parse_unary_expression();
+
+                return std::make_unique<UnaryExpression>(op, std::move(right));
+            }
+
+            return parse_primary_expression();
         }
 
         std::unique_ptr<Expression> parse_primary_expression() {
@@ -355,7 +211,7 @@ class Parser {
         }
 
         std::unique_ptr<Expression> parse_expression(int min_precedence = 0) {
-            auto left = parse_primary_expression();
+            auto left = parse_unary_expression();
 
             while (true) {
                 const Token& token = current();
@@ -427,6 +283,53 @@ class Parser {
             return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
         }
 
+        std::unique_ptr<AssignmentStatement> parse_variable_reassignment() {
+            const Token& variable = expect(TokenType::Identifier);
+            expect(TokenType::Operator, "=");
+
+            auto expression = parse_expression();
+            expect(TokenType::Semicolon);
+
+            return std::make_unique<AssignmentStatement>(variable.value, std::move(expression));
+        }
+
+        std::unique_ptr<IfStatement> parse_if_statement() {
+            expect(TokenType::Keyword, "if");
+            expect(TokenType::LeftParenthesis);
+
+            auto if_condition = parse_expression();
+            expect(TokenType::RightParenthesis);
+
+            auto if_body = parse_block();
+            std::unique_ptr<Statement> else_branch = nullptr;
+
+            if (current().value == "else") {
+                expect(TokenType::Keyword, "else");
+
+                if (current().value == "if") {
+                    else_branch = parse_if_statement();
+                } else {
+                    else_branch = parse_block();
+                }
+            }
+
+            return std::make_unique<IfStatement>(std::move(if_condition), std::move(if_body), std::move(else_branch));
+        }
+
+        std::unique_ptr<BreakStatement> parse_break_statement() {
+            expect(TokenType::Keyword, "break");
+            expect(TokenType::Semicolon);
+
+            return std::make_unique<BreakStatement>();
+        }
+
+        std::unique_ptr<ContinueStatement> parse_continue_statement() {
+            expect(TokenType::Keyword, "continue");
+            expect(TokenType::Semicolon);
+
+            return std::make_unique<ContinueStatement>();
+        }
+
         std::unique_ptr<Statement> parse_statement() {
             if (current().value == "let") {
                 return parse_variable_declaration();
@@ -438,6 +341,22 @@ class Parser {
 
             if (current().value == "while") {
                 return parse_while_statement();
+            }
+
+            if (current().type == TokenType::Identifier && peek().value == "=") {
+                return parse_variable_reassignment();
+            }
+
+            if (current().value == "if") {
+                return parse_if_statement();
+            }
+
+            if (current().value == "break") {
+                return parse_break_statement();
+            }
+
+            if (current().value == "continue") {
+                return parse_continue_statement();
             }
 
             return parse_expression_statement();
