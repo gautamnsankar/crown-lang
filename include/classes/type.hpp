@@ -4,7 +4,7 @@ enum class TypeKind : unsigned char {
     Unknown,
     Boolean,
     String,
-    Float,
+    Double,
     Error,
     Void,
     Int
@@ -12,7 +12,7 @@ enum class TypeKind : unsigned char {
 
 enum class NumberType : unsigned char {
     Integer,
-    Float
+    Double
 };
 
 class Type {
@@ -30,6 +30,14 @@ class Type {
 
             if (kind == TypeKind::String) {
                 return "string";
+            }
+
+            if (kind == TypeKind::Double) {
+                return "double";
+            }
+
+            if (kind == TypeKind::Error) {
+                return "error";
             }
 
             if (kind == TypeKind::Void) {

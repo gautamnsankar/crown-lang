@@ -83,19 +83,19 @@ class Parser {
 
         static void visualize_expression(const Expression& expression, int depth = 0) {
             if (const auto* number = dynamic_cast<const NumberLiteral*>(&expression)) {
-                indent(depth - 1);
+                indent(depth);
                 std::cout << "Value: NumberLiteral(" << number->value << ")" << '\n';
                 return;
             }
 
             if (const auto* boolean = dynamic_cast<const BooleanLiteral*>(&expression)) {
-                indent(depth - 1);
+                indent(depth);
                 std::cout << "Value: BooleanLiteral(" << boolean->value << ")" << '\n';
                 return;
             }
 
             if (const auto* string = dynamic_cast<const StringLiteral*>(&expression)) {
-                indent(depth - 1);
+                indent(depth);
                 std::cout << "Value: StringLiteral(" << string->value << ")" << '\n';
                 return;
             }
@@ -122,6 +122,25 @@ class Parser {
                 visualize_expression(*binary->right, depth + 2);
                 return;
             }
+
+            if (const auto* call = dynamic_cast<const FunctionCall*>(&expression)) {
+                indent(depth);
+                std::cout << "FunctionCall: " << call->callee << '\n';
+
+                indent(depth + 1);
+                std::cout << "Arguments: ";
+
+                if (!call->arguments.empty()) {
+                    std::cout << '\n';
+                    for (const auto& arg : call->arguments) {
+                        visualize_expression(*arg, depth + 2);
+                    }
+                } else {
+                    std::cout << "None\n";
+                }
+
+                return;
+            }
         }
 
         static void visualize_block(const BlockStatement& block, int depth = 0) {
@@ -136,6 +155,8 @@ class Parser {
                 std::cout << "VariableDeclaration:" << '\n';
                 indent(depth + 1);
                 std::cout << "Name: " << variable->name << '\n';
+                indent(depth + 1);
+                std::cout << "Type: " << variable->type.to_string() << '\n';
                 visualize_expression(*variable->value, depth + 2);
 
                 return;
@@ -148,10 +169,33 @@ class Parser {
                 if (ret->value == nullptr) {
                     std::cout << "void";
                 } else {
-                    std::cout << '\n';
                     visualize_expression(*ret->value, depth + 2);
                 }
 
+                std::cout << '\n';
+
+                return;
+            }
+
+            if (const auto* loop = dynamic_cast<const WhileStatement*>(&statement)) {
+                indent(depth);
+                std::cout << "WhileStatement: \n";
+
+                indent(depth + 1);
+                std::cout << "Condition:";
+                visualize_expression(*loop->condition, depth + 2);
+
+                indent(depth + 1);
+                std::cout << "Body:\n";
+                visualize_block(*loop->body, depth + 1);
+                return;
+            }
+
+
+            if (const auto* expression = dynamic_cast<const ExpressionStatement*>(&statement)) {
+                indent(depth);
+                std::cout << "ExpressionStatement:\n";
+                visualize_expression(*expression->expression, depth + 1);
                 return;
             }
         }
@@ -166,15 +210,14 @@ class Parser {
                 std::cout << "Parameters: ";
 
                 if (function->parameters.size() == 0) {
-                    std::cout << "None" << '\n';
-                } else {
-                    indent(depth + 2);
+                    std::cout << "None";
                 }
 
                 for (auto& param : function->parameters) {
-                    indent(depth + 3);
-                    std::cout << param.name << " (" << param.type.to_string() << ")" << '\n';
+                    std::cout << param.name << " (" << param.type.to_string() << ")" << "  ";
                 }
+
+                std::cout << '\n';
 
                 indent(depth + 1);
                 std::cout << "ReturnType: " << function->return_type.to_string() << '\n';
@@ -211,6 +254,10 @@ class Parser {
 
             if (token.value == "int") {
                 return Type(TypeKind::Int);
+            }
+
+            if (token.value == "double") {
+                return Type(TypeKind::Double);
             }
 
             if (token.value == "boolean") {
@@ -259,7 +306,7 @@ class Parser {
             if (token.type == TokenType::NumberLiteral) {
                 const Token& token = advance();
 
-                NumberType type = token.value.find('.') != std::string::npos ? NumberType::Float : NumberType::Integer;
+                NumberType type = token.value.find('.') != std::string::npos ? NumberType::Double : NumberType::Integer;
                 return std::make_unique<NumberLiteral>(token.value, type);
             }
 
@@ -280,9 +327,28 @@ class Parser {
                 return expression;
             }
 
-            if (token.type == TokenType::Identifier) {
+            if (token.type == TokenType::Identifier && peek().type != TokenType::LeftParenthesis) {
                 advance();
                 return std::make_unique<VariableReference>(token.value);
+            }
+
+            if (token.type == TokenType::Identifier && peek().type == TokenType::LeftParenthesis) {
+                std::vector<std::unique_ptr<Expression>> arguments;
+                std::string callee = token.value;
+
+                advance();
+                expect(TokenType::LeftParenthesis);
+
+                while (current().type != TokenType::RightParenthesis && !is_end()) {
+                    arguments.push_back(parse_expression());
+
+                    if (current().type != TokenType::RightParenthesis) {
+                        expect(TokenType::Comma);
+                    }
+                }
+
+                expect(TokenType::RightParenthesis);
+                return std::make_unique<FunctionCall>(callee, std::move(arguments));
             }
 
             throw std::runtime_error("Expected an expression.");
@@ -350,6 +416,17 @@ class Parser {
             return std::make_unique<ReturnStatement>(std::move(value));
         }
 
+        std::unique_ptr<WhileStatement> parse_while_statement() {
+            expect(TokenType::Keyword, "while");
+            expect(TokenType::LeftParenthesis);
+
+            auto condition = parse_expression();
+            expect(TokenType::RightParenthesis);
+
+            auto body = parse_block();
+            return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
+        }
+
         std::unique_ptr<Statement> parse_statement() {
             if (current().value == "let") {
                 return parse_variable_declaration();
@@ -359,7 +436,18 @@ class Parser {
                 return parse_return_statement();
             }
 
-            throw std::runtime_error("Expected a statement.");
+            if (current().value == "while") {
+                return parse_while_statement();
+            }
+
+            return parse_expression_statement();
+        }
+
+        std::unique_ptr<ExpressionStatement> parse_expression_statement() {
+            auto expression = parse_expression();
+            expect(TokenType::Semicolon);
+
+            return std::make_unique<ExpressionStatement>(std::move(expression));
         }
 
         std::unique_ptr<BlockStatement> parse_block() {

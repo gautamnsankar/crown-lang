@@ -119,3 +119,29 @@ class FunctionDeclaration : public Declaration {
             return_type(std::move(return_type)),
             body(std::move(body)) {}
 };
+
+class FunctionCall : public Expression {
+    public:
+        std::vector<std::unique_ptr<Expression>> arguments;
+        std::string callee;
+
+        FunctionCall(std::string callee, std::vector<std::unique_ptr<Expression>> arguments) :
+            callee(std::move(callee)),
+            arguments(std::move(arguments)) {}
+};
+
+class ExpressionStatement : public Statement {
+    public:
+        std::unique_ptr<Expression> expression;
+        ExpressionStatement(std::unique_ptr<Expression> expression) : expression(std::move(expression)) {}
+};
+
+class WhileStatement : public Statement {
+    public:
+        std::unique_ptr<Expression> condition;
+        std::unique_ptr<BlockStatement> body;
+
+        WhileStatement(std::unique_ptr<Expression> condition, std::unique_ptr<BlockStatement> body) :
+            condition(std::move(condition)),
+            body(std::move(body)) {}
+};

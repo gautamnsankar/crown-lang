@@ -3,7 +3,27 @@
 #include <string_view>
 #include <array>
 
-inline constexpr std::array<std::string_view, 7> OPERATORS = {"+", "-", "*", "/", "=", "->", ":"};
-inline constexpr std::array<std::string_view, 3> KEYWORDS = {"let", "fn", "return"};
+inline constexpr std::array<std::string_view, 13> OPERATORS = {
+    "+",
+    "-",
+    "*",
+    "/",
+    "=",
+    "->",
+    ":",
+    "==",
+    "!=",
+    ">",
+    "<",
+    ">=",
+    "<="
+};
+inline constexpr std::array<std::string_view, 5> KEYWORDS = {
+    "let",
+    "fn",
+    "return",
+    "while",
+    "for"
+};
 
 constexpr static inline unsigned char WHITESPACE = (unsigned char) 32;

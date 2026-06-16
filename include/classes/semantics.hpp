@@ -60,6 +60,10 @@ class SemanticAnalyzer {
                 Type initializer_type = analyze_expression(*variable->value);
                 Type final_type = variable->type.kind == TypeKind::Unknown ? initializer_type : variable->type;
 
+                if (initializer_type.kind != variable->type.kind && variable->type.kind != TypeKind::Unknown) {
+                    throw std::runtime_error("Type mismatch in variable.");
+                }
+
                 variables[variable->name] = VariableSymbol(variable->name, final_type);
                 return;
             }
@@ -91,7 +95,7 @@ class SemanticAnalyzer {
 
         Type analyze_expression(const Expression& expression) {
             if (const auto* number = dynamic_cast<const NumberLiteral*>(&expression)) {
-                return Type(number->number_type == NumberType::Float ? TypeKind::Float : TypeKind::Int);
+                return Type(number->number_type == NumberType::Double ? TypeKind::Double : TypeKind::Int);
             }
 
             if (dynamic_cast<const BooleanLiteral*>(&expression)) {
@@ -112,15 +116,52 @@ class SemanticAnalyzer {
                 return iterator->second.type;
             }
 
+            if (const auto* call = dynamic_cast<const FunctionCall*>(&expression)) {
+                 auto iterator = functions.find(call->callee);
+
+                if (iterator == functions.end()) {
+                    throw std::runtime_error("Unknown function: " + call->callee);
+                }
+
+                const FunctionSymbol &fs = iterator->second;
+
+                if (call->arguments.size() != fs.parameter_types.size()) {
+                    throw std::runtime_error(
+                        "Function " + call->callee + " expects " + std::to_string(fs.parameter_types.size()) + " arguments. but got "
+                        + std::to_string(call->arguments.size())
+                    );
+                }
+
+                for (std::size_t i = 0; i < call->arguments.size(); ++i) {
+                    Type argument_type = analyze_expression(*call->arguments[i]);
+                    Type expected_type = fs.parameter_types[i];
+
+                    if (argument_type.kind != expected_type.kind) {
+                        throw std::runtime_error(
+                            "Argument " + std::to_string(i + 1) + 
+                            " of function " + call->callee +
+                            " has type" + argument_type.to_string() +
+                            ", expected " + expected_type.to_string()
+                        );
+                    }
+                }
+
+                return fs.return_type;
+            }
+
             if (const auto* binary = dynamic_cast<const BinaryExpression*>(&expression)) {
                 Type left_type = analyze_expression(*binary->left);
                 Type right_type = analyze_expression(*binary->right);
 
-                bool is_valid = (left_type.kind == TypeKind::Int || left_type.kind == TypeKind::Float) &&
-                                (right_type.kind == TypeKind::Int || left_type.kind == TypeKind::Float);
+                bool is_valid = (left_type.kind == TypeKind::Int || left_type.kind == TypeKind::Double) &&
+                                (right_type.kind == TypeKind::Int || left_type.kind == TypeKind::Double);
 
                 if (!is_valid) {
                     throw std::runtime_error("Cannot perform arithmetic on types " + left_type.to_string() + " and " + right_type.to_string());
+                }
+
+                if (left_type.kind == TypeKind::Double || right_type.kind == TypeKind::Double) {
+                    return Type(TypeKind::Double);
                 }
 
                 return Type(left_type.kind);
@@ -130,6 +171,18 @@ class SemanticAnalyzer {
         }
 
         void analyze(const Program& ast) {
+            for (const auto& declaration : ast.declarations) {
+                if (const auto* function = dynamic_cast<const FunctionDeclaration*>(declaration.get())) {
+                    std::vector<Type> parameter_types;
+
+                    for (const auto& parameter: function->parameters) {
+                        parameter_types.push_back(parameter.type);
+                    }
+
+                    FunctionSymbol fs(parameter_types, function->name, function->return_type);
+                    functions[function->name] = std::move(fs);
+                }
+            }
             for (const auto& declaration : ast.declarations) {
                 analyze_declaration(*declaration);
             }
