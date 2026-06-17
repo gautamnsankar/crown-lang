@@ -3,7 +3,7 @@ A simple, compiled, strongly, and statically typed Turing-complete progrmaming l
 
 ### Basic Printing Example
 ```
-import std;
+import "std";
 
 fn main() -> void {
     std.print("Hello World.");
@@ -12,8 +12,8 @@ fn main() -> void {
 
 ### Math Example
 ```
-import math;
-import std;
+import "math";
+import "std";
 
 fn main() -> void {
     let x: double = math.pi * 2;

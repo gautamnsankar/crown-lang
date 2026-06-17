@@ -47,8 +47,9 @@ class Parser {
 
             if (c.type != type) {
                 throw std::runtime_error(
-                    "Expected: " + std::to_string(static_cast<int>(type)) +
-                    " Got: " + std::to_string(static_cast<int>(c.type))
+                    "Expected type: " + std::to_string(static_cast<int>(type)) +
+                    " Got type: " + std::to_string(static_cast<int>(c.type)) +
+                    " Value: " + c.value
                 );
             }
 
@@ -60,15 +61,17 @@ class Parser {
 
             if (c.type != type) {
                 throw std::runtime_error(
-                    "Expected: " + std::to_string(static_cast<int>(type)) +
-                    " Got: " + std::to_string(static_cast<int>(c.type))
+                    "Expected type: " + std::to_string(static_cast<int>(type)) +
+                    " Got type: " + std::to_string(static_cast<int>(c.type)) +
+                    " Value: " + c.value
                 );
             }
 
              if (c.value != value) {
                 throw std::runtime_error(
-                    "Expected: " + value +
-                    " Got: " + c.value
+                    "Expected type: " + std::to_string(static_cast<int>(type)) +
+                    " Got type: " + std::to_string(static_cast<int>(c.type)) +
+                    " Value: " + c.value
                 );
             }
 
@@ -383,12 +386,42 @@ class Parser {
             return block;
         }
 
-        std::unique_ptr<Declaration> parse_top_level_function() {
-            if (current().value == "fn") {
-                return parse_function_declaration();
+        std::unique_ptr<ImportDeclaration> parse_import_declaration() {
+            expect(TokenType::Keyword, "import");
+            const Token &path = expect(TokenType::String);
+
+            expect(TokenType::Semicolon);
+            return std::make_unique<ImportDeclaration>(path.value);
+        }
+
+        std::unique_ptr<ExternFunctionDeclaration> parse_extern_function_declaration() {
+            expect(TokenType::Keyword, "extern");
+            expect(TokenType::Keyword, "fn");
+
+            const Token& fn_name = expect(TokenType::Identifier);
+
+            expect(TokenType::LeftParenthesis);
+            std::vector<FunctionParameter> parameters;
+
+            while (current().type != TokenType::RightParenthesis) {
+                const Token& name = expect(TokenType::Identifier);
+                expect(TokenType::Operator, ":");
+
+                Type type = parse_type();
+                parameters.push_back(FunctionParameter(name.value, type));
+
+                if (current().type != TokenType::RightParenthesis) {
+                    expect(TokenType::Comma);
+                }
             }
 
-            throw std::runtime_error("Could not find entry point.");
+            expect(TokenType::RightParenthesis);
+            expect(TokenType::Operator, "->");
+
+            Type return_type = parse_type();
+            expect(TokenType::Semicolon);
+
+            return std::make_unique<ExternFunctionDeclaration>(fn_name.value, std::move(parameters), return_type);
         }
 
         std::unique_ptr<FunctionDeclaration> parse_function_declaration() {
@@ -425,11 +458,27 @@ class Parser {
             );
         }
 
+        std::unique_ptr<Declaration> parse_declaration() {
+            if (current().value == "import") {
+                return parse_import_declaration();
+            }
+
+            if (current().value == "extern") {
+                return parse_extern_function_declaration();
+            }
+
+            if (current().value == "fn") {
+                return parse_function_declaration();
+            }
+
+            throw std::runtime_error("Expected declaration.");
+        }
+
         Program parse() {
             Program ast;
 
             while (!is_end()) {
-                ast.declarations.push_back(parse_function_declaration());
+                ast.declarations.push_back(parse_declaration());
             }
 
             return ast;

@@ -35,6 +35,11 @@ class SemanticAnalyzer {
                 return;
             }
 
+            if (const auto* imp = dynamic_cast<const ImportDeclaration*>(&declaration)) {
+                // TODO: check if path is valid later.
+                return;
+            }
+
             throw std::runtime_error("Unknown declaration.");
         }
 
@@ -135,6 +140,11 @@ class SemanticAnalyzer {
             }
 
             if (const auto* break_statement = dynamic_cast<const ContinueStatement*>(&statement)) {
+                return;
+            }
+
+            if (const auto* expression_statement = dynamic_cast<const ExpressionStatement*>(&statement)) {
+                analyze_expression(*expression_statement->expression);
                 return;
             }
 
@@ -282,6 +292,21 @@ class SemanticAnalyzer {
             throw std::runtime_error("Unknown expression.");
         }
 
+        void register_function_signature(const std::string& name, const std::vector<FunctionParameter>& parameters, Type return_type) {
+            std::vector<Type> parameter_types;
+
+            for (const auto& parameter : parameters) {
+                parameter_types.push_back(parameter.type);
+            }
+
+            FunctionSymbol fs;
+            fs.name = name;
+            fs.parameter_types = parameter_types;
+            fs.return_type = return_type;
+
+            functions[name] = std::move(fs);
+        }
+
         void analyze(const Program& ast) {
             for (const auto& declaration : ast.declarations) {
                 if (const auto* function = dynamic_cast<const FunctionDeclaration*>(declaration.get())) {
@@ -293,9 +318,24 @@ class SemanticAnalyzer {
 
                     FunctionSymbol fs(parameter_types, function->name, function->return_type);
                     functions[function->name] = std::move(fs);
+                    continue;
+                }
+
+                if (const auto* function = dynamic_cast<const ExternFunctionDeclaration*>(declaration.get())) {
+                    register_function_signature(function->name, function->parameters, function->return_type);
+                    continue;
                 }
             }
+
             for (const auto& declaration : ast.declarations) {
+                if (dynamic_cast<const ExternFunctionDeclaration*>(declaration.get())) {
+                    continue;
+                }
+
+                if (dynamic_cast<const ImportDeclaration*>(declaration.get())) {
+                    continue;
+                }
+                
                 analyze_declaration(*declaration);
             }
         }

@@ -1,2 +1,5 @@
 .vscode
-main
+compiler
+main.o
+stdlib.o
+program

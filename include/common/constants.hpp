@@ -21,7 +21,7 @@ inline constexpr std::array<std::string_view, 16> OPERATORS = {
     "&&",
     "||"
 };
-inline constexpr std::array<std::string_view, 8> KEYWORDS = {
+inline constexpr std::array<std::string_view, 10> KEYWORDS = {
     "let",
     "fn",
     "return",
@@ -29,7 +29,9 @@ inline constexpr std::array<std::string_view, 8> KEYWORDS = {
     "if",
     "else",
     "break",
-    "continue"
+    "continue",
+    "extern",
+    "import"
 };
 
 constexpr static inline unsigned char WHITESPACE = (unsigned char) 32;

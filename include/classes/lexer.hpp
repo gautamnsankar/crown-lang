@@ -13,22 +13,6 @@ class Lexer {
         std::string raw_source;
         std::size_t cursor;
 
-        bool is_character(unsigned char c) {
-            if (c >= 65 && c <= 90) {
-                return true;
-            }
-
-            if (c >= 97 && c <= 122) {
-                return true;
-            }
-
-            return false;
-        }
-
-        bool is_digit(unsigned char c) {
-            return c >= 48 && c <= 57;
-        }
-
         bool is_operator(unsigned char c) {
             char ch = static_cast<char>(c);
             std::string_view view {&ch, 1};
@@ -73,16 +57,24 @@ class Lexer {
             return cursor >= raw_source.size();
         }
 
+        bool is_identifier_start(unsigned char c) {
+            return std::isalpha(c) || c == '_';
+        }
+
+        bool is_identifier_char(unsigned char c) {
+            return std::isalnum(c) || c == '_';
+        }
+
         Token lex_identifier() {
             std::string buffer;
 
-            while (is_character(current())) {
-                unsigned char c = advance();
-                buffer += c;
+            while (!is_end() && is_identifier_char(current())) {
+                buffer += current();
+                advance();
+            }
 
-                if (std::find(KEYWORDS.begin(), KEYWORDS.end(), buffer) != KEYWORDS.end()) {
-                    return Token(TokenType::Keyword, buffer);
-                }
+            if (std::find(KEYWORDS.begin(), KEYWORDS.end(), buffer) != KEYWORDS.end()) {
+                return Token(TokenType::Keyword, buffer);
             }
 
             if (is_boolean(buffer)) {
@@ -147,7 +139,7 @@ class Lexer {
             std::string buffer;
             bool seen_decimal = false;
 
-            while (is_digit(current())) {
+            while (std::isdigit(current())) {
                 if (peek() == '.') {
                     if (seen_decimal) {
                         throw std::runtime_error("Invalid floating point number.");
@@ -178,7 +170,7 @@ class Lexer {
                     continue;
                 }
 
-                if (is_character(c)) {
+                if (std::isalpha(c)) {
                     tokens.push_back(lex_identifier());
                     continue;
                 }
@@ -188,7 +180,7 @@ class Lexer {
                     continue;
                 }
 
-                if (is_digit(c)) {
+                if (std::isdigit(c)) {
                     tokens.push_back(lex_digits());
                     continue;
                 }

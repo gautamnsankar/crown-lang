@@ -4,6 +4,13 @@
 #include <iostream>
 #include <vector>
 
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
@@ -40,39 +47,81 @@ class LLVMCodeGenerator {
                 return llvm::Type::getVoidTy(*context);
             }
 
+            if (type.kind == TypeKind::String) {
+                return llvm::PointerType::getUnqual(*context);
+            }
+
             throw std::runtime_error("Type not supported by LLVM.");
+        }
+
+        llvm::Function* declare_function(const FunctionDeclaration& function) {
+            if (llvm::Function* existing = module->getFunction(function.name)) {
+                return existing;
+            }
+
+            std::vector<llvm::Type*> parameter_types;
+
+            for (const auto& parameter : function.parameters) {
+                parameter_types.push_back(generate_type(parameter.type));
+            }
+
+            llvm::FunctionType* function_type = llvm::FunctionType::get(generate_type(function.return_type), parameter_types, false);
+            llvm::Function *llvm_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, function.name, module.get());
+
+            std::size_t index = 0;
+            for (auto& arg : llvm_function->args()) {
+                arg.setName(function.parameters[index].name);
+                ++index;
+            }
+
+            return llvm_function;
         }
 
         void generate(const Program& ast) {
             for (const auto& declaration : ast.declarations) {
-                generate_declaration(*declaration);
+                if (const auto* function = dynamic_cast<const ExternFunctionDeclaration*>(declaration.get())) {
+                    generate_extern_function(*function);
+                    continue;
+                }
+
+                if (const auto* function = dynamic_cast<const FunctionDeclaration*>(declaration.get())) {
+                    declare_function(*function);
+                    continue;
+                }
+            }
+
+            for (const auto& declaration : ast.declarations) {
+                if (const auto* function = dynamic_cast<const FunctionDeclaration*>(declaration.get())) {
+                    generate_function_body(*function);
+                }
             }
         }
 
-        void generate_declaration(const Declaration& declaration) {
-            if (const auto* function = dynamic_cast<const FunctionDeclaration*>(&declaration)) {
-                return generate_function(*function);
+        void generate_extern_function(const ExternFunctionDeclaration& function) {
+            if (module->getFunction(function.name)) {
+                return;
             }
 
-            throw std::runtime_error("Unknown declaration (LLVM)");
-        }
-
-        void generate_function(const FunctionDeclaration& function) {
             std::vector<llvm::Type*> parameter_types;
 
-            for (const auto& paramater : function.parameters) {
-                parameter_types.push_back(generate_type(paramater.type));
+            for (const auto& parameter : function.parameters) {
+                parameter_types.push_back(generate_type(parameter.type));
             }
 
-            llvm::Type* return_type = generate_type(function.return_type);
-            llvm::FunctionType* function_type = llvm::FunctionType::get(return_type, parameter_types, false);
+            llvm::FunctionType *function_type = llvm::FunctionType::get(generate_type(function.return_type), parameter_types, false);
+            llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, function.name, module.get());
+        }
 
-            llvm::Function* created_function = llvm::Function::Create(
-                function_type,
-                llvm::Function::ExternalLinkage,
-                function.name,
-                module.get()
-            );
+        void generate_function_body(const FunctionDeclaration& function) {
+            llvm::Function *created_function = module->getFunction(function.name);
+
+            if (!created_function) {
+                throw std::runtime_error("Function was not declared before body generation.");
+            }
+
+            if (!created_function->empty()) {
+                return;
+            }
 
             llvm::BasicBlock* entry_block = llvm::BasicBlock::Create(*context, "entry", created_function);
             builder->SetInsertPoint(entry_block);
@@ -93,7 +142,7 @@ class LLVMCodeGenerator {
 
             generate_block(*function.body);
 
-            if (!entry_block->getTerminator()) {
+            if (!builder->GetInsertBlock()->getTerminator()) {
                 if (function.return_type.kind == TypeKind::Void) {
                     builder->CreateRetVoid();
                 } else {
@@ -382,11 +431,63 @@ class LLVMCodeGenerator {
                 throw std::runtime_error("Unknown unary operation");
             }
 
+            if (const auto* str = dynamic_cast<const StringLiteral*>(&expression)) {
+                return builder->CreateGlobalStringPtr(str->value);
+            }
+
             throw std::runtime_error("Unknown expression (LLVM)");
         }
 
         void visualize_ir() const {
             module->print(llvm::outs(), nullptr);
+        }
+
+        void create_executable(const std::string& path) {
+            llvm::InitializeNativeTarget();
+            llvm::InitializeNativeTargetAsmPrinter();
+            llvm::InitializeNativeTargetAsmParser();
+
+            auto target_triple = llvm::sys::getDefaultTargetTriple();
+            module->setTargetTriple(target_triple);
+
+            std::string error;
+            const llvm::Target *target = llvm::TargetRegistry::lookupTarget(target_triple, error);
+
+            if (!target) {
+                throw std::runtime_error("LLVM target error: " + error);
+            }
+
+            std::string cpu = "generic";
+            std::string features;
+
+            llvm::TargetOptions options;
+            auto relocation_model = std::optional<llvm::Reloc::Model>();
+
+            std::unique_ptr<llvm::TargetMachine> target_machine(target->createTargetMachine(
+                target_triple,
+                cpu,
+                features,
+                options,
+                relocation_model
+            ));
+
+            module->setDataLayout(target_machine->createDataLayout());
+
+            std::error_code ec;
+            llvm::raw_fd_ostream dest(path, ec, llvm::sys::fs::OF_None);
+
+            if (ec) {
+                throw std::runtime_error("Could not open output file.");
+            }
+
+            llvm::legacy::PassManager pass;
+
+            if (target_machine->addPassesToEmitFile(pass, dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+                throw std::runtime_error("TargetMachine cannot emit object file.");
+            }
+
+            pass.run(*module);
+            dest.flush();
         }
 
         LLVMCodeGenerator() {
