@@ -81,7 +81,7 @@ class Parser {
     public:
         Parser(std::vector<Token> tokens) : tokens(std::move(tokens)), cursor(0) {}
 
-        Type parse_type() {
+        Type parse_type(bool is_class = false) {
             const Token& token = expect(TokenType::Identifier);
 
             if (token.value == "void") {
@@ -102,6 +102,10 @@ class Parser {
 
             if (token.value == "boolean") {
                 return Type(TypeKind::Boolean);
+            }
+
+            if (is_class) {
+                return Type(TypeKind::Class, token.value);
             }
 
             return Type(TypeKind::Unknown);
@@ -156,7 +160,20 @@ class Parser {
                 return std::make_unique<UnaryExpression>(op, std::move(right));
             }
 
-            return parse_primary_expression();
+            return parse_postfix_expression();
+        }
+
+        std::unique_ptr<Expression> parse_postfix_expression() {
+            auto expression = parse_primary_expression();
+
+            while (current().value == ".") {
+                expect(TokenType::Operator, ".");
+
+                const Token &field = expect(TokenType::Identifier);
+                expression = std::make_unique<ClassFieldAccess>(std::move(expression), field.value);
+            }
+
+            return expression;
         }
 
         std::unique_ptr<Expression> parse_primary_expression() {
@@ -458,6 +475,30 @@ class Parser {
             );
         }
 
+        std::unique_ptr<ClassDeclaration> parse_class_declaration() {
+            expect(TokenType::Keyword, "class");
+
+            const Token& name = expect(TokenType::Identifier);
+            expect(TokenType::LeftCurlyBraces);
+
+            std::vector<ClassField> fields;
+
+            while (current().type != TokenType::RightCurlyBraces && !is_end()) {
+                const Token& field_name = expect(TokenType::Identifier);
+                expect(TokenType::Operator, ":");
+
+                auto type = parse_type();
+                expect(TokenType::Semicolon);
+
+                fields.push_back(ClassField(field_name.value, std::move(type)));
+            }
+
+            expect(TokenType::RightCurlyBraces);
+            expect(TokenType::Semicolon);
+
+            return std::make_unique<ClassDeclaration>(name.value, std::move(fields));
+        };
+
         std::unique_ptr<Declaration> parse_declaration() {
             if (current().value == "import") {
                 return parse_import_declaration();
@@ -469,6 +510,10 @@ class Parser {
 
             if (current().value == "fn") {
                 return parse_function_declaration();
+            }
+
+            if (current().value == "class") {
+                return parse_class_declaration();
             }
 
             throw std::runtime_error("Expected declaration.");

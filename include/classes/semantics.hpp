@@ -11,23 +11,56 @@ class FunctionSymbol {
         std::vector<Type> parameter_types;
         std::string name;
         Type return_type;
+
+        FunctionSymbol() :
+            return_type(TypeKind::Unknown) {}
+
+        FunctionSymbol(std::vector<Type> parameter_types, std::string name, Type return_type) :
+            parameter_types(std::move(parameter_types)), name(std::move(name)), return_type(std::move(return_type)) {}
 };
 
 class VariableSymbol {
     public:
         std::string name;
         Type type;
+
+        VariableSymbol() :
+            type(TypeKind::Unknown) {}
+
+        VariableSymbol(std::string name, Type type):
+            name(std::move(name)), type(std::move(type)) {}
+};
+
+class ClassSymbol {
+    public:
+        std::vector<ClassField> fields;
+        std::string name;
+
+        ClassSymbol() = default;
+        ClassSymbol(std::vector<ClassField> fields, std::string name) :
+            fields(std::move(fields)), name(std::move(name)) {}
 };
 
 class SemanticAnalyzer {
     private:
         std::unordered_map<std::string, FunctionSymbol> functions;
         std::unordered_map<std::string, VariableSymbol> variables;
+        std::unordered_map<std::string, ClassSymbol> classes;
 
         Type current_return_type;
 
     public:
-        SemanticAnalyzer() = default;
+        bool is_same_type(const Type& a, const Type& b) {
+            if (a.kind != b.kind) {
+                return false;
+            }
+
+            if (a.kind == TypeKind::Class) {
+                return a.class_name == b.class_name;
+            }
+
+            return true;
+        }
 
         void analyze_declaration(const Declaration& declaration) {
             if (const auto* function = dynamic_cast<const FunctionDeclaration*>(&declaration)) {
@@ -40,7 +73,16 @@ class SemanticAnalyzer {
                 return;
             }
 
+            if (const auto* class_declaration = dynamic_cast<const ClassDeclaration*>(&declaration)) {
+                analyze_class(*class_declaration);
+                return;
+            }
+
             throw std::runtime_error("Unknown declaration.");
+        }
+
+        void analyze_class(const ClassDeclaration& class_declaration) {
+            // class_declaration.
         }
 
         void analyze_function(const FunctionDeclaration& function) {
@@ -175,7 +217,32 @@ class SemanticAnalyzer {
             }
 
             if (const auto* call = dynamic_cast<const FunctionCall*>(&expression)) {
-                 auto iterator = functions.find(call->callee);
+                if (classes.contains(call->callee)) {
+                    const ClassSymbol &cls = classes[call->callee];
+
+                    if (call->arguments.size() != cls.fields.size()) {
+                        throw std::runtime_error(
+                            "Constructor for " + cls.name + " expects " + 
+                            std::to_string(cls.fields.size()) + " arguments."
+                        );
+                    }
+
+                    for (std::size_t i = 0; i < call->arguments.size(); ++i) {
+                        Type argument_type = analyze_expression(*call->arguments[i]);
+                        Type field_type = cls.fields[i].type;
+
+                        if (!is_same_type(argument_type, field_type)) {
+                            throw std::runtime_error(
+                                "Constructor argument type mismatch for field " +
+                                cls.fields[i].name
+                            );
+                        }
+                    }
+
+                    return Type(TypeKind::Class, cls.name);
+                }
+
+                auto iterator = functions.find(call->callee);
 
                 if (iterator == functions.end()) {
                     throw std::runtime_error("Unknown function: " + call->callee);
@@ -289,6 +356,24 @@ class SemanticAnalyzer {
                 throw std::runtime_error("Unknown unary operation.");
             }
 
+            if (const auto* access = dynamic_cast<const ClassFieldAccess*>(&expression)) {
+                Type object_type = analyze_expression(*access->object);
+
+                if (object_type.kind != TypeKind::Class) {
+                    throw std::runtime_error("Tried to perform field access on non class type");
+                }
+
+                const ClassSymbol& class_symbol = classes[object_type.class_name];
+
+                for (const auto& class_field : class_symbol.fields) {
+                    if (class_field.name == access->field_name) {
+                        return class_field.type;
+                    }
+                }
+
+                throw std::runtime_error("Unknown field: " + access->field_name + " on class " + object_type.class_name);
+            }
+
             throw std::runtime_error("Unknown expression.");
         }
 
@@ -299,11 +384,7 @@ class SemanticAnalyzer {
                 parameter_types.push_back(parameter.type);
             }
 
-            FunctionSymbol fs;
-            fs.name = name;
-            fs.parameter_types = parameter_types;
-            fs.return_type = return_type;
-
+            FunctionSymbol fs(parameter_types, name, return_type);
             functions[name] = std::move(fs);
         }
 
@@ -325,6 +406,14 @@ class SemanticAnalyzer {
                     register_function_signature(function->name, function->parameters, function->return_type);
                     continue;
                 }
+
+                if (const auto* class_declaration = dynamic_cast<const ClassDeclaration*>(declaration.get())) {
+                    if (classes.contains(class_declaration->name)) {
+                        throw std::runtime_error("Cannot redefine an already declared class: " + class_declaration->name);
+                    }
+
+                    classes[class_declaration->name] = ClassSymbol(class_declaration->fields, class_declaration->name);
+                }
             }
 
             for (const auto& declaration : ast.declarations) {
@@ -333,6 +422,10 @@ class SemanticAnalyzer {
                 }
 
                 if (dynamic_cast<const ImportDeclaration*>(declaration.get())) {
+                    continue;
+                }
+
+                if (dynamic_cast<const ClassDeclaration*>(declaration.get())) {
                     continue;
                 }
                 

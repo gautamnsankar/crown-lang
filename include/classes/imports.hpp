@@ -14,12 +14,10 @@ class ImportResolver {
         std::unordered_set<std::string> loaded_files;
 
         std::filesystem::path resolve_import_path(const std::string& path) {
-            if (path == "std") {
-                return std::filesystem::path("stdlib") / "std.cw";
-            }
+            auto default_path = std::filesystem::path("libs");
 
-            if (path == "math") {
-                return std::filesystem::path("stdlib") / "math.cw";
+            if (std::filesystem::exists(default_path / (path + ".cw"))) {
+                return (default_path / (path + ".cw"));
             }
 
             return std::filesystem::path(path + ".cw");

@@ -1,5 +1,5 @@
 .vscode
 compiler
 main.o
-stdlib.o
+runtime.o
 program

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -188,4 +189,40 @@ class ExternFunctionDeclaration : public Declaration {
 
         ExternFunctionDeclaration(std::string name, std::vector<FunctionParameter> parameters, Type return_type) :
             name(std::move(name)), parameters(std::move(parameters)), return_type(std::move(return_type)) {}
+};
+
+class ClassField {
+    public:
+        std::string name;
+        Type type;
+
+        ClassField(std::string name, Type type) :
+            name(std::move(name)), type(std::move(type)) {}
+};
+
+class ClassDeclaration : public Declaration {
+    public:
+        std::vector<ClassField> fields;
+        std::string name;
+
+        ClassDeclaration(std::string name, std::vector<ClassField> fields) :
+            fields(std::move(fields)), name(std::move(name)) {}
+};
+
+class ConstructorCall : public Expression {
+    public:
+        std::vector<std::unique_ptr<Expression>> arguments;
+        std::string class_name;
+
+        ConstructorCall(std::string class_name, std::vector<std::unique_ptr<Expression>> arguments) :
+            arguments(std::move(arguments)), class_name(std::move(class_name)) {}
+};
+
+class ClassFieldAccess : public Expression {
+    public:
+        std::unique_ptr<Expression> object;
+        std::string field_name;
+
+        ClassFieldAccess(std::unique_ptr<Expression> object, std::string field_name) :
+            object(std::move(object)), field_name(std::move(field_name)) {}
 };

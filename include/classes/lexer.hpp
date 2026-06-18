@@ -226,7 +226,7 @@ class Lexer {
                     continue;
                 }
 
-                    advance(); // TODO: error handle properly
+                advance(); // TODO: error handle properly
             }
 
             tokens.push_back(Token(TokenType::EndOfFile, "EOF"));

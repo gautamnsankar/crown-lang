@@ -25,11 +25,32 @@ class LLVMCodeGenerator {
 
         std::unordered_map<std::string, llvm::AllocaInst*> variables;
         std::unordered_map<std::string, llvm::AllocaInst*> functions;
+        std::unordered_map<std::string, llvm::StructType *> classes;
+
+        std::unordered_map<std::string, const ClassDeclaration*> class_declarations;
 
         std::vector<llvm::BasicBlock*> continue_targets;
         std::vector<llvm::BasicBlock*> break_targets;
 
     public:
+        std::size_t get_class_field_index(const std::string& class_name, const std::string& field) {
+            auto iterator = class_declarations.find(class_name);
+
+            if (iterator == class_declarations.end()) {
+                throw std::runtime_error("Unknown class: " + class_name);
+            }
+
+            const ClassDeclaration* class_declaration = iterator->second;
+
+            for (std::size_t i = 0; i < class_declaration->fields.size(); ++i) {
+                if (class_declaration->fields[i].name == field) {
+                    return i;
+                }
+            }
+
+            throw std::runtime_error("Unknown field: " + field);
+        }
+
         llvm::Type* generate_type(const Type& type) {
             if (type.kind == TypeKind::Int) {
                 return llvm::Type::getInt64Ty(*context);
@@ -51,7 +72,39 @@ class LLVMCodeGenerator {
                 return llvm::PointerType::getUnqual(*context);
             }
 
+            if (type.kind == TypeKind::Class) {
+                auto iterator = classes.find(type.class_name);
+
+                if (iterator == classes.end()) {
+                    throw std::runtime_error("Unknown class type in LLVM.");
+                }
+
+                return iterator->second;
+            }
+
             throw std::runtime_error("Type not supported by LLVM.");
+        }
+
+        void declare_class(const ClassDeclaration& class_declaration) {
+            if (classes.contains(class_declaration.name)) {
+                return;
+            }
+
+            llvm::StructType* struct_type = llvm::StructType::create(*context, class_declaration.name);
+
+            classes[class_declaration.name] = struct_type;
+            class_declarations[class_declaration.name] = &class_declaration;
+        }
+
+        void declare_class_body(const ClassDeclaration& class_declaration) {
+            llvm::StructType* struct_type = classes[class_declaration.name];
+            std::vector<llvm::Type*> field_types;
+
+            for (const auto& field : class_declaration.fields) {
+                field_types.push_back(generate_type(field.type));
+            }
+
+            struct_type->setBody(field_types, false);
         }
 
         llvm::Function* declare_function(const FunctionDeclaration& function) {
@@ -88,11 +141,22 @@ class LLVMCodeGenerator {
                     declare_function(*function);
                     continue;
                 }
+
+                if (const auto* class_declaration = dynamic_cast<const ClassDeclaration*>(declaration.get())) {
+                    declare_class(*class_declaration);
+                    continue;
+                }
             }
 
             for (const auto& declaration : ast.declarations) {
                 if (const auto* function = dynamic_cast<const FunctionDeclaration*>(declaration.get())) {
                     generate_function_body(*function);
+                    continue;
+                }
+
+                 if (const auto* class_declaration = dynamic_cast<const ClassDeclaration*>(declaration.get())) {
+                    declare_class_body(*class_declaration);
+                    continue;
                 }
             }
         }
@@ -295,6 +359,18 @@ class LLVMCodeGenerator {
             throw std::runtime_error("Unknown statement (LLVM)");
         }
 
+        llvm::Value* generate_class_constructor(const FunctionCall& call) {
+            llvm::StructType *struct_type = classes[call.callee];
+            llvm::Value *value = llvm::UndefValue::get(struct_type);
+
+            for (std::size_t i = 0; i < call.arguments.size(); ++i) {
+                llvm::Value *field_value = generate_expression(*call.arguments[i]);
+                value = builder->CreateInsertValue(value, field_value, {static_cast<unsigned int>(i)}, "field");
+            }
+
+            return value;
+        }
+
         llvm::Value* generate_expression(const Expression& expression) {
             if (const auto* number = dynamic_cast<const NumberLiteral*>(&expression)) {
                 if (number->number_type == NumberType::Integer) {
@@ -322,10 +398,14 @@ class LLVMCodeGenerator {
             }
 
             if (const auto* call = dynamic_cast<const FunctionCall*>(&expression)) {
+                if (classes.contains(call->callee)) {
+                    return generate_class_constructor(*call);
+                }
+
                 llvm::Function* function = module->getFunction(call->callee);
 
                 if (!function) {
-                    throw std::runtime_error("Unknown function (LLVM)");
+                    throw std::runtime_error("Unknown function (LLVM): " + call->callee);
                 }
 
                 std::vector<llvm::Value*> argument_values;
@@ -432,7 +512,33 @@ class LLVMCodeGenerator {
             }
 
             if (const auto* str = dynamic_cast<const StringLiteral*>(&expression)) {
-                return builder->CreateGlobalStringPtr(str->value);
+                llvm::Value *raw_string = builder->CreateGlobalStringPtr(str->value);
+                llvm::Function* function = module->getFunction("new_string");
+
+                if (!function) {
+                    throw std::runtime_error("Missing runtime function: new_string");
+                }
+
+                return builder->CreateCall(function, {raw_string}, "string");
+            }
+
+            if (const auto* field = dynamic_cast<const ClassFieldAccess*>(&expression)) {
+                const auto* object = dynamic_cast<const VariableReference*>(field->object.get());
+
+                if (!object) {
+                    throw std::runtime_error("Implement function call access later.");
+                }
+
+                llvm::AllocaInst* object_alloca = variables[object->name];
+                llvm::Type *object_type = object_alloca->getAllocatedType();
+
+                auto* struct_type = llvm::cast<llvm::StructType>(object_type);
+                std::string class_name = struct_type->getName().str();
+                std::size_t index = get_class_field_index(class_name, field->field_name);
+
+                llvm::Value *field_ptr = builder->CreateStructGEP(struct_type, object_alloca, static_cast<unsigned int>(index), field->field_name);
+
+                return builder->CreateLoad(struct_type->getElementType(static_cast<unsigned int>(index)), field_ptr, field->field_name);
             }
 
             throw std::runtime_error("Unknown expression (LLVM)");

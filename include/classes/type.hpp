@@ -6,6 +6,7 @@ enum class TypeKind : unsigned char {
     String,
     Double,
     Error,
+    Class,
     Void,
     Int
 };
@@ -17,7 +18,17 @@ enum class NumberType : unsigned char {
 
 class Type {
     public:
+        std::string class_name;
         TypeKind kind;
+
+        Type() :
+            kind(TypeKind::Unknown) {}
+
+        Type(TypeKind kind) :
+            kind(kind) {}
+
+        Type(TypeKind kind, std::string class_name) :
+            class_name(std::move(class_name)), kind(kind) {}
 
         std::string to_string() const {
             if (kind == TypeKind::Boolean) {
@@ -42,6 +53,10 @@ class Type {
 
             if (kind == TypeKind::Void) {
                 return "void";
+            }
+
+            if (kind == TypeKind::Class) {
+                return "class";
             }
 
             return "unknown";
